@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pulse Pro — Congress Trading, Research Edition</title>
+<meta name="description" content="Autopilot-style research tracker for publicly filed Congressional trades. Hypothetical post-disclosure returns, SPY comparison, portfolio tracking, watchlists and charts. Not financial advice.">
+<meta name="theme-color" content="#0f172a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pulse Pro">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-apple.png">
+<link rel="icon" href="icon-apple.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <div><h1>Pulse Pro</h1><p class="sub">Congress trading, researched — not copied blindly. Hypothetical returns from the close <em>after</em> disclosure, compared with the S&amp;P 500. Not financial advice.</p></div>
+  <button id="refreshBtn" type="button">↻ Refresh</button>
+</header>
+<nav class="tabs">
+  <a href="#leader">Leaderboard</a><a href="#portfolio">Portfolio</a><a href="#trades">Trades</a><a href="#ratings">Ratings</a><a href="#watch">Watchlists</a>
+</nav>
+<div id="alertBanner" class="banner" hidden></div>
+<div id="statusBanner" class="banner">Loading latest snapshot…</div>
+<main>
+  <section class="card controls">
+    <div class="row">
+      <label>Lookback
+        <span class="seg" id="lookbackSeg">
+          <button type="button" data-days="30">30D</button>
+          <button type="button" data-days="90" class="active">90D</button>
+          <button type="button" data-days="180">180D</button>
+        </span>
+      </label>
+      <label>Rank by
+        <select id="sortMode"><option value="return">Best return</option><option value="consistency">Most consistent</option><option value="spy">Best vs SPY</option></select>
+      </label>
+      <label class="grow">Search person, ticker, or asset
+        <input id="searchBox" type="search" placeholder="e.g. Pelosi, NVDA, Microsoft" autocomplete="off">
+      </label>
+    </div>
+    <p class="hint" id="metaLine"></p>
+  </section>
+
+  <section class="card" id="market">
+    <h2>Market comparison</h2>
+    <div id="marketBox" class="stats"></div>
+    <p class="hint">SPY comparison is apples-to-apples: for each buy, SPY is also measured from the close after that same filing date to the latest close, then averaged.</p>
+  </section>
+
+  <section class="card" id="leader">
+    <h2>Leaderboard — top 10</h2>
+    <p class="hint">Tap a person for their chart, trades, and simulator. “Consistency” is the share of priced buys with a positive post-disclosure return. At least 2 priced buys are required.</p>
+    <div class="tablewrap"><table id="leaderTable"><thead><tr><th>#</th><th>Person</th><th>Buys</th><th>Mean return</th><th>vs SPY</th><th>Consistency</th><th></th></tr></thead><tbody></tbody></table></div>
+    <p id="leaderEmpty" class="hint" hidden>No one meets the 2-buy threshold for this lookback.</p>
+    <div id="personDetail"></div>
+  </section>
+
+  <section class="card" id="history">
+    <h2>Performance across periods</h2>
+    <p class="hint">Same person, same method, different lookbacks. A blank means they had fewer than 2 priced buys in that period.</p>
+    <div class="tablewrap"><table id="historyTable"><thead><tr><th>Person</th><th>30D</th><th>90D</th><th>180D</th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section class="card" id="portfolio">
+    <h2>Your tracked portfolio</h2>
+    <p class="hint">Follow people from the leaderboard, then this aggregates <em>their disclosed buys only</em> into one hypothetical portfolio. It is not their real portfolio — disclosures give brackets, not exact shares or current holdings.</p>
+    <div id="portfolioBox"></div>
+    <div id="portfolioChart"></div>
+    <div id="holdingsBox"></div>
+  </section>
+
+  <section class="card">
+    <h2>Simulator</h2>
+    <p class="hint">Split an amount equally across the selected person's priced buys in the lookback. Excludes costs, taxes, and slippage.</p>
+    <div class="row">
+      <label>Person<select id="simPerson"></select></label>
+      <label>Amount ($)<input id="simAmount" type="number" min="1" step="1" value="1000"></label>
+      <span class="seg" id="simPresets"><button type="button" data-amt="100">$100</button><button type="button" data-amt="500">$500</button><button type="button" data-amt="1000" class="active">$1,000</button><button type="button" data-amt="0">Custom</button></span>
+    </div>
+    <p id="simResult" class="result"></p>
+  </section>
+
+  <section class="card" id="trades">
+    <h2>Recent trades</h2>
+    <div class="row">
+      <label>Type<select id="typeFilter"><option value="all">All</option><option value="buy">Buys only</option><option value="sell">Sells only</option></select></label>
+    </div>
+    <div id="tradeList"></div>
+    <button id="moreBtn" type="button" class="secondary">Show more trades</button>
+  </section>
+
+  <section class="card" id="ratings">
+    <h2>Stock signals — research only</h2>
+    <p class="hint">These are simple, transparent rules, <strong>not recommendations</strong>: net Congressional buying in the lookback plus recent price momentum. “Risk” is price volatility over the last 90 trading days. Do your own research before any decision.</p>
+    <div class="tablewrap"><table id="ratingsTable"><thead><tr><th>Ticker</th><th>Buys / Sells</th><th>Momentum 30D</th><th>Risk</th><th>Signal</th><th></th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section class="card">
+    <h2>Beyond Congress — simulated strategies</h2>
+    <p class="hint">Full hedge-fund 13F holdings are quarterly, delayed, and stored by CUSIP, not ticker — they cannot be turned into a reliable, low-maintenance daily feed here, and inventing them would be misleading. What this app <em>does</em> show, honestly, are simulated strategies built only from the disclosed trades above, plus the SPY benchmark. No real AI fund is tracked.</p>
+    <div id="strategyBox" class="stats"></div>
+  </section>
+
+  <section class="card" id="watch">
+    <h2>Your watchlists — saved on this device only</h2>
+    <h3>People</h3><ul id="watchPeople" class="watch"></ul>
+    <h3>Stocks</h3><ul id="watchStocks" class="watch"></ul>
+    <p class="hint">Clearing this app's data or reinstalling may clear these lists.</p>
+  </section>
+
+  <section class="card">
+    <h2>Alerts, honestly</h2>
+    <p class="hint">A free GitHub Pages home-screen app cannot send true iPhone push notifications — that needs a backend and push service, which is neither free nor low-maintenance. What you get here, free: a daily snapshot (02:17 UTC workflow), a “new since your last visit” banner at the top of this page, and new filings highlighted in the trade list. Open the app once a day and you will see what changed.</p>
+    <h2>How this works, and its limits</h2>
+    <ul>
+      <li>Returns start at the first close strictly after the filing date, to the latest available close, using adjusted closes where available.</li>
+      <li>“Holdings” here mean tickers that appear in disclosed buys, not confirmed current ownership. People may have sold since, and disclosures do not show exact share counts.</li>
+      <li>Coverage is roughly the most recent 190 days of filings, capped in the snapshot at 1,800 trades and 120 priced tickers plus SPY.</li>
+      <li>Sources: MacroWombat House JSON, Austin Starks Senate Parquet data, Yahoo Finance prices. Use only for lawful, personal, noncommercial research.</li>
+      <li>This tool is unaffiliated with Autopilot, congressional offices, or GitHub, and it is not financial advice.</li>
+    </ul>
+  </section>
+</main>
+<footer><p>Pulse Pro · Personal research tool · No financial advice · No paid API keys · No broker connection</p></footer>
+<script src="app.js"></script>
+<script>if ('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {})); }</script>
+</body>
+</html>
