@@ -1,5 +1,12 @@
 'use strict';
 let DATA=null, lookback=90, sortMode='return', shownTrades=40, selectedPerson=null;
+let activeTab='overview', personTradeFilter='all', personTradesExpanded=false;
+function showTab(name){
+  activeTab=name;
+  document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===name));
+  document.querySelectorAll('.tabpanel').forEach(p=>{ p.hidden = p.id!=='panel-'+name; });
+}
+window.showTab=showTab;
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const pct=v=>v==null||!Number.isFinite(v)?'—':(v>=0?'+':'')+v.toFixed(2)+'%';
@@ -39,7 +46,10 @@ function ranked(){
 function togglePerson(p){ watchPeople.has(p)?watchPeople.delete(p):watchPeople.add(p); saveSet('pulse-pro-watch-people',watchPeople); renderAll(); }
 function toggleStock(t){ watchStocks.has(t)?watchStocks.delete(t):watchStocks.add(t); saveSet('pulse-pro-watch-stocks',watchStocks); renderAll(); }
 window.togglePerson=togglePerson; window.toggleStock=toggleStock;
-window.selectPerson=p=>{ selectedPerson=p; renderPersonDetail(); document.getElementById('leader').scrollIntoView({behavior:'smooth'}); };
+window.selectPerson=p=>{ selectedPerson=p; personTradeFilter='all'; personTradesExpanded=false; showTab('leaderboard'); renderPersonDetail(); document.getElementById('leader').scrollIntoView({behavior:'smooth'}); };
+window.setPersonTradeFilter=f=>{ personTradeFilter=f; renderPersonDetail(); };
+window.togglePersonTradesExpanded=()=>{ personTradesExpanded=!personTradesExpanded; renderPersonDetail(); };
+window.openPersonInTrades=p=>{ $('searchBox').value=p; shownTrades=40; showTab('trades'); renderTrades(); document.getElementById('trades').scrollIntoView({behavior:'smooth'}); };
 function chartSVG(buys, amount){
   // Equal-weight cumulative path: for each trading date, mean of (price/entry) over buys already entered.
   const dates=[]; const byTicker={};
@@ -70,12 +80,28 @@ function renderPersonDetail(){
   const box=$('personDetail'); if(!selectedPerson){box.innerHTML='';return;}
   const g=groupPersons(lookback).find(x=>x.person===selectedPerson) || groupPersons(180).find(x=>x.person===selectedPerson);
   if(!g){box.innerHTML='<p class="hint">That person has no priced buys in this lookback.</p>';return;}
-  const trades=(DATA.trades||[]).filter(t=>t.member===selectedPerson).slice(0,12);
+  const allTrades=(DATA.trades||[]).filter(t=>t.member===selectedPerson)
+    .sort((a,b)=>dparse(b.filedDate)-dparse(a.filedDate)||dparse(b.tradeDate)-dparse(a.tradeDate));
+  const filtered=personTradeFilter==='all'?allTrades:allTrades.filter(t=>t.type===personTradeFilter);
+  const buys=allTrades.filter(t=>t.type==='buy').length, sells=allTrades.filter(t=>t.type==='sell').length;
+  const shown=personTradesExpanded?filtered:filtered.slice(0,20);
   box.innerHTML=`<h3>${esc(g.person)} — detail</h3>
     <p class="hint">${esc(g.chamber)} · ${g.buys.length} priced buys · Mean ${pct(g.mean)} · vs SPY ${pct(g.excess)} · Consistency ${g.win.toFixed(0)}% · Tickers: ${esc(g.tickers.join(', '))}</p>
     ${chartSVG(g.buys,1000)}
     <p class="hint">Chart: $1,000 split equally across this person's priced buys in the lookback, valued over time. Flat segments are buys not yet entered.</p>
-    <ul>${trades.map(t=>`<li>${esc(t.ticker)} ${t.type} · Filed ${esc(t.filedDate)} · ${esc(t.amountLabel)}${Number.isFinite(t.returnPct)?` · ${pct(t.returnPct)}`:''}</li>`).join('')}</ul>
+    <h3>All recent trades (${allTrades.length})</h3>
+    <p class="hint">Every trade for this person in the current snapshot, newest filing first — not just the first 12.</p>
+    <div class="row"><span class="seg">
+      <button type="button" class="${personTradeFilter==='all'?'active':''}" onclick="setPersonTradeFilter('all')">All (${allTrades.length})</button>
+      <button type="button" class="${personTradeFilter==='buy'?'active':''}" onclick="setPersonTradeFilter('buy')">Buys (${buys})</button>
+      <button type="button" class="${personTradeFilter==='sell'?'active':''}" onclick="setPersonTradeFilter('sell')">Sells (${sells})</button>
+    </span>
+    <button type="button" class="mini" onclick="openPersonInTrades('${esc(selectedPerson)}')">Open in Trades tab</button></div>
+    <div>${shown.map(t=>`<div class="trade"><div><b>${esc(t.ticker)}</b> <span class="pill ${t.type}">${t.type==='buy'?'Buy':'Sell'}</span>
+      <div class="meta">${esc(t.asset)}<br>Traded ${esc(t.tradeDate)} · Filed ${esc(t.filedDate)} · ${esc(t.amountLabel)}
+      ${Number.isFinite(t.returnPct)?`<br>Post-disclosure return: <span class="${cls(t.returnPct)}">${pct(t.returnPct)}</span>`:''}</div></div>
+      <div>${t.filing?`<a href="${esc(t.filing)}" target="_blank" rel="noopener">Source ↗</a> `:''}</div></div>`).join('')||'<p class="hint">No trades match this filter.</p>'}</div>
+    ${filtered.length>20?`<button type="button" class="secondary" onclick="togglePersonTradesExpanded()">${personTradesExpanded?'Show fewer trades':`Show all ${filtered.length} trades`}</button>`:''}
     <button type="button" class="mini" onclick="togglePerson('${esc(selectedPerson)}')">${watchPeople.has(selectedPerson)?'✓ Following person':'＋ Follow person'}</button>`;
 }
 function renderLeader(){
@@ -95,7 +121,7 @@ function renderHistory(){
   for(const d of [30,90,180]) for(const g of groupPersons(d)) maps[d][g.person]=g.mean;
   const people=[...new Set([...Object.keys(maps[30]),...Object.keys(maps[90]),...Object.keys(maps[180])])];
   const top=people.map(p=>({p, m:maps[90][p]??maps[180][p]??-999})).sort((a,b)=>b.m-a.m).slice(0,10);
-  $('historyTable').querySelector('tbody').innerHTML=top.map(x=>`<tr><td><b>${esc(x.p)}</b></td><td class="${cls(maps[30][x.p])}">${pct(maps[30][x.p])}</td><td class="${cls(maps[90][x.p])}">${pct(maps[90][x.p])}</td><td class="${cls(maps[180][x.p])}">${pct(maps[180][x.p])}</td></tr>`).join('');
+  $('historyTable').querySelector('tbody').innerHTML=top.map(x=>`<tr><td><a href="#" onclick="selectPerson('${esc(x.p)}');return false;"><b>${esc(x.p)}</b></a></td><td class="${cls(maps[30][x.p])}">${pct(maps[30][x.p])}</td><td class="${cls(maps[90][x.p])}">${pct(maps[90][x.p])}</td><td class="${cls(maps[180][x.p])}">${pct(maps[180][x.p])}</td></tr>`).join('');
 }
 function renderMarket(){
   const rows=groupPersons(lookback);
@@ -191,7 +217,7 @@ function renderWatch(){
   const prices=DATA?.prices||{};
   $('watchPeople').innerHTML=[...watchPeople].map(p=>{
     const g=groupPersons(lookback).find(x=>x.person===p);
-    return `<li><b>${esc(p)}</b> ${g?`<span class="${cls(g.mean)}">${pct(g.mean)}</span>`:''} <button type="button" onclick="togglePerson('${esc(p)}')">×</button></li>`;
+    return `<li><a href="#" onclick="selectPerson('${esc(p)}');return false;"><b>${esc(p)}</b></a> ${g?`<span class="${cls(g.mean)}">${pct(g.mean)}</span>`:''} <button type="button" onclick="togglePerson('${esc(p)}')">×</button></li>`;
   }).join('')||'<li>No people followed yet.</li>';
   $('watchStocks').innerHTML=[...watchStocks].map(t=>{
     const bars=prices[t]; const last=bars?bars[bars.length-1][1]:null; const prev=bars&&bars.length>1?bars[bars.length-2][1]:null;
@@ -226,6 +252,7 @@ async function load(){
   }
   renderAll();
 }
+document.querySelectorAll('.tabs button').forEach(b=>b.addEventListener('click',()=>showTab(b.dataset.tab)));
 document.querySelectorAll('#lookbackSeg button').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('#lookbackSeg button').forEach(x=>x.classList.remove('active')); b.classList.add('active');
   lookback=parseInt(b.dataset.days,10); renderAll();
