@@ -206,9 +206,21 @@ def build():
         feed = get_json(SOURCE_URL, 50)
         trades = parse_trades(feed)
     except Exception as ex:
-        raise RuntimeError(f'Disclosure feed unavailable: {ex}; preserving last working snapshot')
+        # A feed outage (for example, the source returning 403 to a
+        # GitHub Actions runner) must not block publishing the site:
+        # keep the last working snapshot already in site/data.json and
+        # let the workflow proceed to deploy it, instead of failing
+        # before the deploy step. Only fail hard when there is no
+        # usable snapshot to publish at all.
+        if prior.get('trades'):
+            print(f'WARN Disclosure feed unavailable: {ex}; preserving last working snapshot and deploying it', flush=True)
+            return
+        raise RuntimeError(f'Disclosure feed unavailable: {ex}; no usable snapshot to publish')
     if not trades or len(trades) < 50:
-        raise RuntimeError('Too few valid disclosed transactions; preserving last working snapshot')
+        if prior.get('trades'):
+            print('WARN Too few valid disclosed transactions; preserving last working snapshot and deploying it', flush=True)
+            return
+        raise RuntimeError('Too few valid disclosed transactions; no usable snapshot to publish')
     senate_loaded = False
     try:
         senate_trades = load_senate()
